@@ -1,0 +1,64 @@
+# hermes-projects-manager
+
+Desktop plugin for [Hermes Agent](https://hermes-agent.nousresearch.com/) that adds a **Projects** manager UI: create/rename projects, pick icons & colors, manage folders (including remote LXC/home paths), and keep the sidebar project tree in sync.
+
+No extra backend service. It uses stock Hermes `projects.*` gateway RPCs and `projects.db` (same store as `hermes project` / Desktop “Grouping → Project”).
+
+## Requirements
+
+- Hermes Desktop that loads **disk plugins**
+- Hermes backend (local or remote) with Projects support (`projects.list`, `projects.create`, `projects.update`, `projects.add_folder`, …)
+- For remote Desktop: folder paths must exist on the **gateway host** (not only the PC)
+
+## Install
+
+1. Copy this folder into Desktop’s disk plugins directory as `projects-manager`:
+
+| OS | Path |
+|----|------|
+| Windows | `%LOCALAPPDATA%\hermes\desktop-plugins\projects-manager\` |
+| macOS | `~/Library/Application Support/hermes/desktop-plugins/projects-manager/` |
+| Linux | `~/.config/hermes/desktop-plugins/projects-manager/` (or your Desktop data dir) |
+
+2. Ensure the folder contains at least:
+
+```text
+projects-manager/
+  plugin.js
+```
+
+3. In Desktop: **⌘/Ctrl+K → Reload desktop plugins** (or restart Desktop).
+
+4. Open **Projects** from the top nav, status-bar chip, or command palette (“Projects — manage workspaces”).
+
+> **Remote mode note:** Disk plugins load on the **Desktop client machine**, not on the remote LXC/VPS `~/.hermes/desktop-plugins/`. Put `plugin.js` where the PC app reads plugins.
+
+## What it does
+
+- List / create / edit / delete (or archive) named projects
+- Icon + color for sidebar Projects grouping
+- Multi-folder projects: add, set primary, detach (files on disk are never deleted)
+- Remote folder browser starting at gateway `$HOME` (creates subdirs on demand)
+- Local gateway: native folder dialog when Desktop is in local mode
+- Nudges sidebar project-tree refresh after appearance/folder changes
+
+## Usage tips
+
+- **Click a project row** → edit modal (name, appearance, description, folders)
+- **Trash icon** (top-right of row) → delete project record only; sessions stay, they just ungroup
+- **Move sessions** between projects: session row ⋯ → **Move to project** (stock Desktop)
+- Removing a folder from a project does **not** rewrite existing session `cwd`s — use Move to project if chats stay under an old path
+
+## Portability
+
+Defaults resolve gateway `$HOME` at runtime (`/root`, `/home/you`, …). No house-specific paths or companion services required.
+
+## Development
+
+Single file: `plugin.js` (Hermes Desktop runtime plugin — ESM, imports from `@hermes/plugin-sdk`).
+
+After edits: copy to the Desktop plugins path and **Reload desktop plugins**.
+
+## License
+
+MIT
