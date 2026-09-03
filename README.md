@@ -4,6 +4,32 @@ Desktop plugin for [Hermes Agent](https://hermes-agent.nousresearch.com/) that a
 
 No extra backend service. It uses stock Hermes `projects.*` gateway RPCs and `projects.db` (same store as `hermes project` / Desktop “Grouping → Project”).
 
+## Screenshots
+
+### Projects manager
+
+List projects, primary folder, Active badge, and trash on the row. Status bar shows **Project:** with icon + name when one is active.
+
+![Projects manager](docs/screenshots/01-manager.png)
+
+### Edit project
+
+Name, centered color swatches, icon grid, folders (primary / detach / add), and description — all in one modal.
+
+![Edit project modal](docs/screenshots/02-edit-modal.png)
+
+### Status bar picker
+
+Click the status-bar chip to switch active project, clear active, or open Manage.
+
+![Status bar project picker](docs/screenshots/03-status-picker.png)
+
+### Sidebar grouping
+
+Stock **Grouping → Project** shows sessions under the project (e.g. Homelab) once cwd matches a project folder.
+
+![Sidebar Projects grouping](docs/screenshots/04-sidebar-grouping.png)
+
 ## Requirements
 
 - Hermes Desktop that loads **disk plugins**
