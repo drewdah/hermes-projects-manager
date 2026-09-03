@@ -45,6 +45,7 @@ The right status-bar chip is a **project picker**:
 ## What it does
 
 - List / create / edit / delete (or archive) named projects
+- **Status-bar project picker** (set/clear active project; jump to Manage)
 - Icon + color for sidebar Projects grouping
 - Multi-folder projects: add, set primary, detach (files on disk are never deleted)
 - Remote folder browser starting at gateway `$HOME` (creates subdirs on demand)
@@ -58,9 +59,42 @@ The right status-bar chip is a **project picker**:
 - **Move sessions** between projects: session row ⋯ → **Move to project** (stock Desktop)
 - Removing a folder from a project does **not** rewrite existing session `cwd`s — use Move to project if chats stay under an old path
 
+## Memory & context boundaries
+
+**Projects are not a separate memory bank.** They do not open their own Mnemosyne database, swap `SOUL.md`, or wall off profile memory when you switch. What they change is **where sessions live (cwd)** — and **cwd** is how Hermes pulls project instructions from disk.
+
+### What actually isolates
+
+| Layer | What it scopes | Project-related? |
+|--------|----------------|------------------|
+| **Profile** (`default`, named bots, …) | Own `$HERMES_HOME`: SOUL, MEMORY/USER, Mnemosyne, **`projects.db`**, skills | Projects are **per profile** |
+| **Session** | That chat’s transcript / tool history | Sessions **group under** a project by cwd; deleting a project does not delete sessions |
+| **Workspace cwd** | Terminal, file tools, which context files load | **Yes — main path for “project knowledge”** |
+| **Git root** | `.hermes.md` parent walk stops here | Repo boundary so home-level rules don’t leak into every repo |
+
+### How to give a project durable instructions (from disk)
+
+Put context files **inside the project folder** (the path you attached in Projects). When a session’s cwd is under that folder, Hermes can load them into the system prompt:
+
+| File | Typical use |
+|------|-------------|
+| **`.hermes.md`** or **`HERMES.md`** | Hermes-specific rules; walks parents up to the **git root** |
+| **`AGENTS.md`** (or `agents.md` / override variants) | Portable agent instructions (Hermes + other tools) |
+| **`CLAUDE.md`** / **`.cursorrules`** | Same idea, other tool flavors — Hermes may pick one project-context source |
+| Optional **`IDEA.md`** | Short project brief some create flows write — **not** identity (`SOUL.md`) |
+
+**Tips:**
+
+- Prefer **folder rules** over relying only on the project’s UI description field.
+- Don’t put project rules in `~/.hermes/AGENTS.md` expecting them to apply everywhere — that’s cwd-scoped, not global. Cross-project identity stays in **`SOUL.md`** (profile) or skills.
+- **Active project** is a bookmark (status bar / agent “which is active”). It does **not** by itself sandbox long-term memory or force every new chat into that project unless the UI scope/cwd says so.
+- Profile memory (Mnemosyne, MEMORY.md, etc.) remains **profile-scoped** unless you deliberately design otherwise.
+
+Official Hermes docs: [project context files](https://hermes-agent.nousresearch.com/docs) (search “AGENTS.md” / project context) and the bundled `project-context-files` skill reference in the agent tree.
+
 ## Portability
 
-Defaults resolve gateway `$HOME` at runtime (`/root`, `/home/you`, …). No house-specific paths or companion services required.
+Defaults resolve gateway `$HOME` at runtime (`/root`, `/home/you`, …). No required `~/projects` directory — subfolders are created when you ask. No house-specific paths or companion services required.
 
 ## Development
 
