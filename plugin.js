@@ -21,6 +21,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
   EmptyState,
   ErrorState,
   GlyphSpinner,
@@ -1924,6 +1929,192 @@ function ProjectsPage() {
   })
 }
 
+
+function ProjectsStatusChip() {
+  const t = usePluginI18n(ID)
+  const qc = useQueryClient()
+  const profile = useValue(host.state.profile) || profileName()
+
+  const listQuery = useQuery({
+    queryKey: [...QUERY_KEY, profile, 'statusbar'],
+    queryFn: async () => projectsRequest('projects.list', {}),
+    refetchInterval: 15_000,
+    retry: 1
+  })
+
+  const projects = useMemo(() => {
+    const raw = (listQuery.data && listQuery.data.projects) || []
+    return Array.isArray(raw) ? raw.filter(p => !p.archived) : []
+  }, [listQuery.data])
+
+  const activeId = (listQuery.data && listQuery.data.active_id) || null
+  const active = projects.find(p => p && p.id === activeId) || null
+
+  const refreshLists = () => {
+    void qc.invalidateQueries({ queryKey: QUERY_KEY })
+  }
+
+  const activate = async project => {
+    try {
+      await projectsRequest('projects.set_active', { id: project.id })
+      try {
+        haptic('tap')
+      } catch (_) {}
+      host.notify({ kind: 'success', message: t('activated', project.name) })
+      refreshLists()
+      nudgeSidebarProjectTree()
+    } catch (err) {
+      host.notify({
+        kind: 'error',
+        message: err instanceof Error ? err.message : String(err)
+      })
+    }
+  }
+
+  const clearActive = async () => {
+    try {
+      await projectsRequest('projects.set_active', { id: null })
+      try {
+        haptic('tap')
+      } catch (_) {}
+      host.notify({ kind: 'success', message: t('clearedActive') })
+      refreshLists()
+      nudgeSidebarProjectTree()
+    } catch (err) {
+      host.notify({
+        kind: 'error',
+        message: err instanceof Error ? err.message : String(err)
+      })
+    }
+  }
+
+  const triggerLabel = active
+    ? jsxs(Fragment, {
+        children: [
+          jsx('span', {
+            key: 'p',
+            className: 'text-(--ui-text-quaternary)',
+            children: t('chipProjectPrefix')
+          }),
+          jsx('i', {
+            key: 'i',
+            'aria-hidden': true,
+            className: cn('codicon', `codicon-${active.icon || 'folder-library'}`),
+            style: {
+              fontSize: '0.7rem',
+              lineHeight: 1,
+              color: active.color || undefined
+            }
+          }),
+          jsx('span', {
+            key: 'n',
+            className: 'max-w-[9rem] truncate font-medium text-foreground',
+            children: active.name
+          })
+        ]
+      })
+    : jsxs(Fragment, {
+        children: [
+          jsx('i', {
+            key: 'i',
+            'aria-hidden': true,
+            className: 'codicon codicon-folder-library',
+            style: { fontSize: '0.7rem', lineHeight: 1 }
+          }),
+          jsx('span', { key: 't', children: t('title') })
+        ]
+      })
+
+  return jsx(DropdownMenu, {
+    children: jsxs(Fragment, {
+      children: [
+        jsx(DropdownMenuTrigger, {
+          asChild: true,
+          children: jsx('button', {
+            type: 'button',
+            title: active ? t('chipActiveTip', active.name) : t('chipIdleTip'),
+            className: cn(
+              'inline-flex h-full max-w-[14rem] items-center gap-1 px-1.5 text-[0.6875rem] transition-colors',
+              'text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground'
+            ),
+            children: triggerLabel
+          })
+        }),
+        jsxs(DropdownMenuContent, {
+          align: 'end',
+          className: 'min-w-[14rem] max-w-[18rem]',
+          children: [
+            listQuery.isLoading
+              ? jsx(DropdownMenuItem, {
+                  disabled: true,
+                  children: t('loading')
+                })
+              : null,
+            !listQuery.isLoading && projects.length === 0
+              ? jsx(DropdownMenuItem, {
+                  disabled: true,
+                  children: t('emptyTitle')
+                })
+              : null,
+            ...projects.map(p => {
+              const isOn = p.id === activeId
+              return jsx(
+                DropdownMenuItem,
+                {
+                  onSelect: () => {
+                    void activate(p)
+                  },
+                  className: 'gap-2',
+                  children: [
+                    jsx('i', {
+                      key: 'i',
+                      'aria-hidden': true,
+                      className: cn('codicon', `codicon-${p.icon || 'folder-library'}`, 'shrink-0'),
+                      style: {
+                        fontSize: '0.8rem',
+                        lineHeight: 1,
+                        color: p.color || undefined
+                      }
+                    }),
+                    jsx('span', {
+                      key: 'n',
+                      className: 'min-w-0 flex-1 truncate',
+                      children: p.name
+                    }),
+                    isOn
+                      ? jsx('i', {
+                          key: 'c',
+                          'aria-hidden': true,
+                          className: 'codicon codicon-check shrink-0 text-primary',
+                          style: { fontSize: '0.75rem' }
+                        })
+                      : null
+                  ]
+                },
+                p.id
+              )
+            }),
+            jsx(DropdownMenuSeparator, {}),
+            active
+              ? jsx(DropdownMenuItem, {
+                  onSelect: () => {
+                    void clearActive()
+                  },
+                  children: t('clearActive')
+                })
+              : null,
+            jsx(DropdownMenuItem, {
+              onSelect: () => openProjects(),
+              children: t('manageProjects')
+            })
+          ].filter(Boolean)
+        })
+      ]
+    })
+  })
+}
+
+
 export default {
   id: ID,
   name: 'Projects',
@@ -1996,7 +2187,13 @@ export default {
           'Removes the project record only. Sessions stay in history — they just stop grouping under this name. Files and git repos on disk are untouched.',
         deleted: name => `Deleted ${name}`,
         archivedOk: name => `Archived ${name}`,
-        activated: name => `Active project: ${name}`
+        activated: name => `Active project: ${name}`,
+        clearedActive: 'Cleared active project',
+        clearActive: 'Clear active',
+        manageProjects: 'Manage projects…',
+        chipProjectPrefix: 'Project:',
+        chipIdleTip: 'Pick an active project',
+        chipActiveTip: name => `Active: ${name} — click to switch`
       }
     })
 
@@ -2031,22 +2228,7 @@ export default {
         id: 'chip',
         area: 'statusBar.right',
         order: 95,
-        render: () =>
-          jsx(Tip, {
-            label: 'Open Projects',
-            children: jsx('button', {
-              type: 'button',
-              className: cn(
-                'inline-flex h-full items-center gap-1 px-1.5 text-[0.6875rem] transition-colors',
-                'text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground'
-              ),
-              onClick: () => openProjects(),
-              children: [
-                jsx(Codicon, { name: 'folder-library', size: '0.7rem', key: 'i' }),
-                jsx('span', { key: 't', children: 'Projects' })
-              ]
-            })
-          })
+        render: () => jsx(ProjectsStatusChip, {})
       },
       {
         id: 'palette-open',

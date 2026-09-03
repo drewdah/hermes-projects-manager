@@ -31,6 +31,15 @@ projects-manager/
 
 4. Open **Projects** from the top nav, status-bar chip, or command palette (“Projects — manage workspaces”).
 
+### Status bar project picker
+
+The right status-bar chip is a **project picker**:
+
+- No active project → shows **Projects**
+- Active project → **`Project:`** + colored icon + name
+- Click → popup of all projects (check marks the active one)
+- **Clear active** / **Manage projects…** at the bottom of the menu
+
 > **Remote mode note:** Disk plugins load on the **Desktop client machine**, not on the remote LXC/VPS `~/.hermes/desktop-plugins/`. Put `plugin.js` where the PC app reads plugins.
 
 ## What it does
