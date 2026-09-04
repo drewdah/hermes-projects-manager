@@ -712,9 +712,29 @@ function AppearancePicker({ icon, color, onIcon, onColor, disabled }) {
     }
   }, [iconOpen])
 
+  // Inline styles — Desktop plugin CSS often purges uncommon Tailwind
+  // (grid-cols-7, bg with comma fallbacks), which left the picker transparent
+  // and single-column.
+  const panelStyle = {
+    display: 'block',
+    width: '100%',
+    marginTop: 6,
+    padding: 10,
+    borderRadius: 8,
+    border: '1px solid var(--ui-stroke-secondary, rgba(255,255,255,0.12))',
+    backgroundColor: 'var(--card, var(--ui-control-background, var(--background, #161616)))',
+    boxShadow: '0 10px 28px rgba(0,0,0,0.45)',
+    boxSizing: 'border-box'
+  }
+  const gridStyle = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+    gap: 6
+  }
+
   return jsxs('div', {
     ref: rootRef,
-    className: 'relative flex flex-col gap-1.5',
+    className: 'flex flex-col gap-1.5',
     children: [
       jsx('span', {
         className: 'text-[0.6875rem] font-medium text-(--ui-text-tertiary)',
@@ -725,31 +745,28 @@ function AppearancePicker({ icon, color, onIcon, onColor, disabled }) {
       jsxs('div', {
         className: 'flex items-center gap-2',
         children: [
-          jsx(Tip, {
-            label: t('pickIconTip'),
-            children: jsx('button', {
-              type: 'button',
-              disabled,
-              'aria-label': t('pickIconTip'),
-              'aria-expanded': iconOpen,
-              'aria-haspopup': 'dialog',
-              title: activeIcon,
-              className: cn(
-                'grid size-9 shrink-0 place-items-center rounded-md border transition disabled:opacity-50',
-                iconOpen
-                  ? 'border-(--ui-accent) bg-(--ui-control-active-background)'
-                  : 'border-(--ui-stroke-secondary) bg-(--ui-control-hover-background) hover:border-(--ui-stroke-tertiary)'
-              ),
-              style: color ? { color } : undefined,
-              onClick: () => {
-                if (disabled) return
-                setIconOpen(v => !v)
-              },
-              children: jsx('i', {
-                'aria-hidden': true,
-                className: cn('codicon', `codicon-${activeIcon}`),
-                style: { fontSize: '1.1rem', lineHeight: 1 }
-              })
+          jsx('button', {
+            type: 'button',
+            disabled,
+            'aria-label': t('pickIconTip'),
+            'aria-expanded': iconOpen,
+            'aria-haspopup': 'dialog',
+            title: activeIcon,
+            className: cn(
+              'grid size-9 shrink-0 place-items-center rounded-md border transition disabled:opacity-50',
+              iconOpen
+                ? 'border-(--ui-accent) bg-(--ui-control-active-background)'
+                : 'border-(--ui-stroke-secondary) bg-(--ui-control-hover-background) hover:border-(--ui-stroke-tertiary)'
+            ),
+            style: color ? { color } : undefined,
+            onClick: () => {
+              if (disabled) return
+              setIconOpen(v => !v)
+            },
+            children: jsx('i', {
+              'aria-hidden': true,
+              className: cn('codicon', `codicon-${activeIcon}`),
+              style: { fontSize: '1.1rem', lineHeight: 1 }
             })
           }),
 
@@ -804,20 +821,17 @@ function AppearancePicker({ icon, color, onIcon, onColor, disabled }) {
         ]
       }),
 
-      // Icon overlay — anchored under the trigger; closes on pick / Esc / outside.
+      // Expand-in-place panel (not absolute) so dialog scroll/overflow can't
+      // strip the background or collapse the grid to one column.
       iconOpen
         ? jsxs('div', {
             role: 'dialog',
             'aria-label': t('pickIconTitle'),
-            className: cn(
-              'absolute left-0 top-[calc(100%+0.35rem)] z-50 w-full min-w-[16rem]',
-              'rounded-md border border-(--ui-stroke-secondary)',
-              'bg-(--ui-control-background,var(--card)) p-2 shadow-lg'
-            ),
+            style: panelStyle,
             onClick: e => e.stopPropagation(),
             children: [
               jsxs('div', {
-                className: 'mb-1.5 flex items-center justify-between gap-2 px-0.5',
+                className: 'mb-2 flex items-center justify-between gap-2',
                 children: [
                   jsx('span', {
                     className: 'text-[0.65rem] font-medium text-(--ui-text-tertiary)',
@@ -838,7 +852,7 @@ function AppearancePicker({ icon, color, onIcon, onColor, disabled }) {
                 ]
               }),
               jsx('div', {
-                className: 'grid grid-cols-7 gap-1',
+                style: gridStyle,
                 children: PROJECT_ICONS.map(name => {
                   const selected = activeIcon === name
                   return jsx(
@@ -850,10 +864,14 @@ function AppearancePicker({ icon, color, onIcon, onColor, disabled }) {
                       'aria-label': name,
                       'aria-pressed': selected,
                       className: cn(
-                        'grid h-8 w-full place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background) disabled:opacity-50',
+                        'grid place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background) disabled:opacity-50',
                         selected && 'bg-(--ui-control-active-background) text-foreground'
                       ),
-                      style: selected && color ? { color } : undefined,
+                      style: {
+                        height: 32,
+                        width: '100%',
+                        color: selected && color ? color : undefined
+                      },
                       onClick: () => {
                         onIcon(name)
                         setIconOpen(false)
@@ -861,7 +879,7 @@ function AppearancePicker({ icon, color, onIcon, onColor, disabled }) {
                       children: jsx('i', {
                         'aria-hidden': true,
                         className: cn('codicon', `codicon-${name}`),
-                        style: { fontSize: '0.875rem', lineHeight: 1 }
+                        style: { fontSize: '0.9rem', lineHeight: 1 }
                       })
                     },
                     name
@@ -872,10 +890,12 @@ function AppearancePicker({ icon, color, onIcon, onColor, disabled }) {
           })
         : null,
 
-      jsx('p', {
-        className: 'text-[0.65rem] text-(--ui-text-quaternary)',
-        children: t('appearanceHint')
-      })
+      !iconOpen
+        ? jsx('p', {
+            className: 'text-[0.65rem] text-(--ui-text-quaternary)',
+            children: t('appearanceHint')
+          })
+        : null
     ]
   })
 }
@@ -1966,38 +1986,15 @@ function ProjectsPage() {
   const t = usePluginI18n(ID)
   const qc = useQueryClient()
   const deskProfile = useValue(host.state.profile)
-  // Page filter: which profile's projects.db we manage. Defaults to stock "default".
-  const [selectedProfile, setSelectedProfile] = useState(DEFAULT_PROFILE)
-  const [profileOptions, setProfileOptions] = useState([
-    { name: DEFAULT_PROFILE, displayName: 'default', isDefault: true }
-  ])
   const [dialog, setDialog] = useState(null)
   const [pendingDelete, setPendingDelete] = useState(null)
-  const profile = normalizeProfileKey(selectedProfile || DEFAULT_PROFILE)
-
-  useEffect(() => {
-    let cancelled = false
-    void listHermesProfiles().then(rows => {
-      if (cancelled || !Array.isArray(rows) || !rows.length) return
-      setProfileOptions(rows)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  // One-shot seed from the active Desktop profile (if any). After that the
-  // page filter is user-owned — create/edit still fall back to "default".
-  const seededRef = useRef(false)
-  useEffect(() => {
-    if (seededRef.current) return
-    seededRef.current = true
-    const live =
-      typeof deskProfile === 'string' && deskProfile && deskProfile !== '__all__' && deskProfile !== 'all'
-        ? normalizeProfileKey(deskProfile)
-        : DEFAULT_PROFILE
-    setSelectedProfile(live || DEFAULT_PROFILE)
-  }, [deskProfile])
+  // List follows the active Desktop profile (no page-header picker — profile
+  // is chosen on create/edit). Unset / all-profiles → stock default.
+  const profile = normalizeProfileKey(
+    typeof deskProfile === 'string' && deskProfile && deskProfile !== '__all__' && deskProfile !== 'all'
+      ? deskProfile
+      : DEFAULT_PROFILE
+  )
 
   const listQuery = useQuery({
     queryKey: [...QUERY_KEY, profile],
@@ -2131,25 +2128,6 @@ function ProjectsPage() {
               jsx('div', {
                 className: 'text-[0.6875rem] text-(--ui-text-quaternary)',
                 children: t('subtitle', String(profile || DEFAULT_PROFILE))
-              })
-            ]
-          }),
-          jsxs('div', {
-            className: 'flex w-[9.5rem] shrink-0 flex-col gap-0.5',
-            children: [
-              jsx('span', {
-                className: 'text-[0.6rem] font-medium uppercase tracking-wide text-(--ui-text-quaternary)',
-                children: t('profileFilterLabel')
-              }),
-              jsx(ProfileSelect, {
-                value: profile,
-                options: profileOptions,
-                onChange: next => {
-                  setSelectedProfile(normalizeProfileKey(next))
-                  try {
-                    haptic('tap')
-                  } catch (_) {}
-                }
               })
             ]
           }),
