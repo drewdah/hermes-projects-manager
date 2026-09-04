@@ -15,7 +15,7 @@ List projects, primary folder, Active badge, and trash on the row. Open via top 
 ### New / Edit project (popover closed)
 
 - **Name row:** icon trigger on the **left** of the name field  
-- **Profile** select (per-profile `projects.db`; leave as **default** / KITT if unsure)  
+- **Profile** select (per-profile `projects.db`; leave as **default** if unsure)  
 - Folder (Browse), optional description  
 - Appearance opens as a **floating Popover** (does not grow the modal)
 
@@ -26,9 +26,8 @@ List projects, primary folder, Active badge, and trash on the row. Open via top 
 Click the glyph beside the name. Panel floats over the dialog:
 
 1. **Color swatches** on top (live-tints every icon below)  
-2. Separator  
-3. **5-column** icon grid  
-4. **Done** — or pick an icon to apply and close  
+2. **5-column** icon grid  
+3. **Done** — or pick an icon to apply and close  
 
 ![Appearance popover open](docs/screenshots/05-appearance-popover.png)
 
@@ -43,8 +42,6 @@ Click the status-bar chip to switch active project, clear active, or open Manage
 Stock **Grouping → Project** shows sessions under the project once cwd matches a project folder.
 
 ![Sidebar Projects grouping](docs/screenshots/04-sidebar-grouping.png)
-
-> **Note:** `02` and `05` reflect the current New project + appearance Popover UX (2026-09-04). `01` / `03` / `04` are still valid for list, status chip, and sidebar grouping.
 
 ## Requirements
 
