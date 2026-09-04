@@ -1,6 +1,6 @@
 # hermes-projects-manager
 
-Desktop plugin for [Hermes Agent](https://hermes-agent.nousresearch.com/) that adds a **Projects** manager UI: create/rename projects, pick icons & colors, manage folders (including remote LXC/home paths), and keep the sidebar project tree in sync.
+Desktop plugin for [Hermes Agent](https://hermes-agent.nousresearch.com/) that adds a **Projects** manager UI: create/edit named workspaces, pin them to a Hermes **profile**, set icon & color, manage folders (including remote gateway paths), and keep the sidebar project tree in sync.
 
 No extra backend service. It uses stock Hermes `projects.*` gateway RPCs and `projects.db` (same store as `hermes project` / Desktop “Grouping → Project”).
 
@@ -8,15 +8,29 @@ No extra backend service. It uses stock Hermes `projects.*` gateway RPCs and `pr
 
 ### Projects manager
 
-List projects, primary folder, Active badge, and trash on the row. Status bar shows **Project:** with icon + name when one is active.
+List projects, primary folder, Active badge, and trash on the row. Open via top nav, status-bar chip, or command palette.
 
 ![Projects manager](docs/screenshots/01-manager.png)
 
-### Edit project
+### Edit / New project
 
-Name, centered color swatches, icon grid, folders (primary / detach / add), and description — all in one modal.
+- **Name row:** icon trigger on the **left** of the name field  
+- **Profile** select (per-profile `projects.db`; leave as **default** if unsure)  
+- Folders (primary / detach / add), description  
+- Appearance opens as a **floating Popover** (does not grow the modal)
 
 ![Edit project modal](docs/screenshots/02-edit-modal.png)
+
+### Appearance popover (icon + color)
+
+Click the glyph beside the name. Panel floats over the dialog:
+
+1. **Color swatches** on top (live-tints every icon below)  
+2. Separator  
+3. **5-column** icon grid  
+4. **Done** — or pick an icon to apply and close  
+
+![Appearance popover](docs/screenshots/05-appearance-popover.png)
 
 ### Status bar picker
 
@@ -26,14 +40,17 @@ Click the status-bar chip to switch active project, clear active, or open Manage
 
 ### Sidebar grouping
 
-Stock **Grouping → Project** shows sessions under the project (e.g. Homelab) once cwd matches a project folder.
+Stock **Grouping → Project** shows sessions under the project once cwd matches a project folder.
 
 ![Sidebar Projects grouping](docs/screenshots/04-sidebar-grouping.png)
+
+> **Note:** `01`–`04` may lag slightly behind the latest chrome. Prefer `05-appearance-popover.png` for the current appearance control. Re-capture `02-edit-modal.png` after a UI pass so the name-row glyph + profile field match shipping.
 
 ## Requirements
 
 - Hermes Desktop that loads **disk plugins**
 - Hermes backend (local or remote) with Projects support (`projects.list`, `projects.create`, `projects.update`, `projects.add_folder`, …)
+- Desktop build that exports SDK **`Popover`** (used for the floating appearance panel)
 - For remote Desktop: folder paths must exist on the **gateway host** (not only the PC)
 
 ## Install
@@ -71,9 +88,9 @@ The right status-bar chip is a **project picker**:
 ## What it does
 
 - List / create / edit / delete (or archive) named projects
-- **Profile pin** — pick which Hermes profile owns the project on create/edit (`projects.db` is per-profile). Leave unset → stock **`default`**. Page header filter switches which profile you manage; changing profile on edit migrates the project record
+- **Profile pin** — on create/edit, choose which Hermes profile owns the project (`projects.db` is **per-profile**). Unset → stock **`default`**. Changing profile on edit **migrates** the project record (create on target + delete source)
 - **Status-bar project picker** (set/clear active project; jump to Manage)
-- Icon + color for sidebar Projects grouping (compact: one icon button opens an overlay grid so the edit modal stays short)
+- **Appearance** — glyph left of the name field; floating Popover with colors + 5-col icon grid (live color tint); Done or pick-icon to close
 - Multi-folder projects: add, set primary, detach (files on disk are never deleted)
 - Remote folder browser starting at gateway `$HOME` (creates subdirs on demand)
 - Local gateway: native folder dialog when Desktop is in local mode
@@ -81,10 +98,11 @@ The right status-bar chip is a **project picker**:
 
 ## Usage tips
 
-- **Click a project row** → edit modal (name, appearance, description, folders)
-- **Trash icon** (top-right of row) → delete project record only; sessions stay, they just ungroup
+- **Click a project row** → edit modal
+- **Trash icon** (top-right of row, icon-only) → delete project record only; sessions stay, they just ungroup
 - **Move sessions** between projects: session row ⋯ → **Move to project** (stock Desktop)
 - Removing a folder from a project does **not** rewrite existing session `cwd`s — use Move to project if chats stay under an old path
+- List/status chip follow the **active Desktop profile**; use the form’s Profile field to write into another profile’s `projects.db`
 
 ## Memory & context boundaries
 
@@ -128,6 +146,14 @@ Defaults resolve gateway `$HOME` at runtime (`/root`, `/home/you`, …). No requ
 Single file: `plugin.js` (Hermes Desktop runtime plugin — ESM, imports from `@hermes/plugin-sdk`).
 
 After edits: copy to the Desktop plugins path and **Reload desktop plugins**.
+
+Public repo: https://github.com/drewdah/hermes-projects-manager
+
+## Changelog (high level)
+
+- **Profile pin** on create/edit (default profile when unset; migrate on edit)
+- **Appearance** glyph left of name; Popover floats color + icon grid over the modal
+- Status-bar project picker; row click → edit; trash icon-only
 
 ## License
 
