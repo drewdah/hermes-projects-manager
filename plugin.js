@@ -14,7 +14,7 @@
  *  - default profile id = "default" when none chosen
  *  - page filter selects which profile's projects.db you manage
  * UX (2026-09-04b):
- *  - appearance: single icon trigger + overlay grid (keeps edit modal short)
+ *  - appearance: icon left of name; Popover floats color+icon panel over modal
  */
 import {
   Button,
@@ -32,6 +32,9 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
   EmptyState,
   ErrorState,
   GlyphSpinner,
@@ -681,8 +684,10 @@ async function pickLocalDirectory() {
 
 /**
  * Name + appearance: glyph trigger left of the name field.
- * Open panel = color swatches → separator → 5-col icons (live-tinted) → Done.
- * Pick icon or Done closes. Inline styles (Desktop purge-safe).
+ * Color + icon panel floats via SDK Popover (portals over dialog content —
+ * does not expand modal height / escape overflow-y-auto clipping).
+ * Panel: swatches → separator → 5-col icons (live tint) → Done.
+ * Pick icon or Done closes.
  */
 function NameWithAppearance({
   name,
@@ -699,41 +704,8 @@ function NameWithAppearance({
   const t = usePluginI18n(ID)
   const activeIcon = icon || 'folder-library'
   const [open, setOpen] = useState(false)
-  const rootRef = useRef(null)
+  const tint = color || undefined
 
-  useEffect(() => {
-    if (!open) return
-    const onKey = e => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        setOpen(false)
-      }
-    }
-    const onPointer = e => {
-      const el = rootRef.current
-      if (!el) return
-      if (el.contains(e.target)) return
-      setOpen(false)
-    }
-    document.addEventListener('keydown', onKey, true)
-    document.addEventListener('pointerdown', onPointer, true)
-    return () => {
-      document.removeEventListener('keydown', onKey, true)
-      document.removeEventListener('pointerdown', onPointer, true)
-    }
-  }, [open])
-
-  const panelStyle = {
-    display: 'block',
-    width: '100%',
-    marginTop: 8,
-    padding: 10,
-    borderRadius: 8,
-    border: '1px solid var(--ui-stroke-secondary, rgba(255,255,255,0.12))',
-    backgroundColor: 'var(--card, var(--ui-control-background, var(--background, #161616)))',
-    boxShadow: '0 10px 28px rgba(0,0,0,0.45)',
-    boxSizing: 'border-box'
-  }
   const swatchRowStyle = {
     display: 'flex',
     flexWrap: 'wrap',
@@ -753,10 +725,27 @@ function NameWithAppearance({
     gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
     gap: 6
   }
-  const tint = color || undefined
+
+  const triggerBtn = jsx('button', {
+    type: 'button',
+    disabled,
+    'aria-label': t('appearanceOpen'),
+    title: t('appearanceOpen'),
+    className: cn(
+      'grid size-9 shrink-0 place-items-center rounded-md border transition disabled:opacity-50',
+      open
+        ? 'border-(--ui-accent) bg-(--ui-control-active-background)'
+        : 'border-(--ui-stroke-secondary) bg-(--ui-control-hover-background) hover:border-(--ui-stroke-tertiary)'
+    ),
+    style: color ? { color } : undefined,
+    children: jsx('i', {
+      'aria-hidden': true,
+      className: cn('codicon', `codicon-${activeIcon}`),
+      style: { fontSize: '1.1rem', lineHeight: 1 }
+    })
+  })
 
   return jsxs('div', {
-    ref: rootRef,
     className: 'flex flex-col gap-1.5',
     children: [
       jsx('span', {
@@ -766,29 +755,162 @@ function NameWithAppearance({
       jsxs('div', {
         className: 'flex items-center gap-2',
         children: [
-          jsx('button', {
-            type: 'button',
-            disabled,
-            'aria-label': t('appearanceOpen'),
-            'aria-expanded': open,
-            'aria-haspopup': 'dialog',
-            title: t('appearanceOpen'),
-            className: cn(
-              'grid size-9 shrink-0 place-items-center rounded-md border transition disabled:opacity-50',
-              open
-                ? 'border-(--ui-accent) bg-(--ui-control-active-background)'
-                : 'border-(--ui-stroke-secondary) bg-(--ui-control-hover-background) hover:border-(--ui-stroke-tertiary)'
-            ),
-            style: color ? { color } : undefined,
-            onClick: () => {
-              if (disabled) return
-              setOpen(v => !v)
+          jsxs(Popover, {
+            open,
+            onOpenChange: next => {
+              if (disabled && next) return
+              setOpen(Boolean(next))
             },
-            children: jsx('i', {
-              'aria-hidden': true,
-              className: cn('codicon', `codicon-${activeIcon}`),
-              style: { fontSize: '1.1rem', lineHeight: 1 }
-            })
+            children: [
+              jsx(PopoverTrigger, {
+                asChild: true,
+                disabled: Boolean(disabled),
+                children: triggerBtn
+              }),
+              jsx(PopoverContent, {
+                side: 'bottom',
+                align: 'start',
+                sideOffset: 8,
+                collisionPadding: 12,
+                // Beat dialog stacking; wider than default w-72 for 5-col icons.
+                className: 'z-[200] w-[min(22rem,calc(100vw-2rem))] p-3',
+                onOpenAutoFocus: e => {
+                  // Keep focus feel light; don't steal from name unless needed.
+                  e.preventDefault()
+                },
+                children: jsxs('div', {
+                  'aria-label': t('appearanceTitle'),
+                  children: [
+                    jsx('div', {
+                      style: swatchRowStyle,
+                      children: [
+                        ...SWATCHES.map(swatch =>
+                          jsx(
+                            'button',
+                            {
+                              type: 'button',
+                              disabled,
+                              title: swatch,
+                              'aria-label': swatch,
+                              'aria-pressed': color === swatch,
+                              style: {
+                                width: 18,
+                                height: 18,
+                                borderRadius: 999,
+                                border: 'none',
+                                padding: 0,
+                                cursor: disabled ? 'default' : 'pointer',
+                                backgroundColor: swatch,
+                                color: swatch,
+                                boxShadow:
+                                  color === swatch
+                                    ? '0 0 0 2px var(--ui-bg-elevated, #111), 0 0 0 3.5px currentColor'
+                                    : '0 0 0 1px rgba(0,0,0,0.25)',
+                                flexShrink: 0
+                              },
+                              onClick: () => onColor(color === swatch ? null : swatch)
+                            },
+                            swatch
+                          )
+                        ),
+                        jsx(
+                          'button',
+                          {
+                            type: 'button',
+                            disabled,
+                            title: t('noColor'),
+                            'aria-label': t('noColor'),
+                            'aria-pressed': !color,
+                            style: {
+                              width: 18,
+                              height: 18,
+                              borderRadius: 999,
+                              display: 'grid',
+                              placeItems: 'center',
+                              padding: 0,
+                              cursor: disabled ? 'default' : 'pointer',
+                              border: !color
+                                ? '1.5px solid var(--ui-accent, #e11)'
+                                : '1px solid var(--ui-stroke-secondary, rgba(255,255,255,0.2))',
+                              background: 'transparent',
+                              color: 'var(--ui-text-tertiary, #888)',
+                              flexShrink: 0
+                            },
+                            onClick: () => onColor(null),
+                            children: jsx('i', {
+                              'aria-hidden': true,
+                              className: 'codicon codicon-circle-slash',
+                              style: { fontSize: '0.55rem', lineHeight: 1 }
+                            })
+                          },
+                          'no-color'
+                        )
+                      ]
+                    }),
+                    jsx('hr', { style: sepStyle }),
+                    jsx('div', {
+                      style: gridStyle,
+                      children: PROJECT_ICONS.map(glyph => {
+                        const selected = activeIcon === glyph
+                        return jsx(
+                          'button',
+                          {
+                            type: 'button',
+                            disabled,
+                            title: glyph,
+                            'aria-label': glyph,
+                            'aria-pressed': selected,
+                            style: {
+                              height: 32,
+                              width: '100%',
+                              display: 'grid',
+                              placeItems: 'center',
+                              borderRadius: 6,
+                              border: selected
+                                ? '1px solid var(--ui-stroke-tertiary, rgba(255,255,255,0.18))'
+                                : '1px solid transparent',
+                              background: selected
+                                ? 'var(--ui-control-active-background, rgba(255,255,255,0.08))'
+                                : 'transparent',
+                              color: tint || 'var(--ui-text-tertiary, #9a9a9a)',
+                              cursor: disabled ? 'default' : 'pointer'
+                            },
+                            onClick: () => {
+                              onIcon(glyph)
+                              setOpen(false)
+                            },
+                            children: jsx('i', {
+                              'aria-hidden': true,
+                              className: cn('codicon', `codicon-${glyph}`),
+                              style: { fontSize: '0.9rem', lineHeight: 1, color: 'inherit' }
+                            })
+                          },
+                          glyph
+                        )
+                      })
+                    }),
+                    jsxs('div', {
+                      style: {
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                        gap: 8,
+                        marginTop: 10
+                      },
+                      children: [
+                        jsx('button', {
+                          type: 'button',
+                          disabled,
+                          className:
+                            'h-7 rounded-md border border-(--ui-stroke-secondary) bg-(--ui-control-hover-background) px-3 text-xs font-medium text-foreground hover:border-(--ui-stroke-tertiary) disabled:opacity-50',
+                          onClick: () => setOpen(false),
+                          children: t('appearanceDone')
+                        })
+                      ]
+                    })
+                  ]
+                })
+              })
+            ]
           }),
           jsx(Input, {
             autoFocus: Boolean(autoFocus),
@@ -805,143 +927,7 @@ function NameWithAppearance({
             }
           })
         ]
-      }),
-      open
-        ? jsxs('div', {
-            role: 'dialog',
-            'aria-label': t('appearanceTitle'),
-            style: panelStyle,
-            onClick: e => e.stopPropagation(),
-            children: [
-              jsx('div', {
-                style: swatchRowStyle,
-                children: [
-                  ...SWATCHES.map(swatch =>
-                    jsx(
-                      'button',
-                      {
-                        type: 'button',
-                        disabled,
-                        title: swatch,
-                        'aria-label': swatch,
-                        'aria-pressed': color === swatch,
-                        style: {
-                          width: 18,
-                          height: 18,
-                          borderRadius: 999,
-                          border: 'none',
-                          padding: 0,
-                          cursor: disabled ? 'default' : 'pointer',
-                          backgroundColor: swatch,
-                          color: swatch,
-                          boxShadow:
-                            color === swatch
-                              ? '0 0 0 2px var(--ui-bg-elevated, #111), 0 0 0 3.5px currentColor'
-                              : '0 0 0 1px rgba(0,0,0,0.25)',
-                          flexShrink: 0
-                        },
-                        onClick: () => onColor(color === swatch ? null : swatch)
-                      },
-                      swatch
-                    )
-                  ),
-                  jsx(
-                    'button',
-                    {
-                      type: 'button',
-                      disabled,
-                      title: t('noColor'),
-                      'aria-label': t('noColor'),
-                      'aria-pressed': !color,
-                      style: {
-                        width: 18,
-                        height: 18,
-                        borderRadius: 999,
-                        display: 'grid',
-                        placeItems: 'center',
-                        padding: 0,
-                        cursor: disabled ? 'default' : 'pointer',
-                        border: !color
-                          ? '1.5px solid var(--ui-accent, #e11)'
-                          : '1px solid var(--ui-stroke-secondary, rgba(255,255,255,0.2))',
-                        background: 'transparent',
-                        color: 'var(--ui-text-tertiary, #888)',
-                        flexShrink: 0
-                      },
-                      onClick: () => onColor(null),
-                      children: jsx('i', {
-                        'aria-hidden': true,
-                        className: 'codicon codicon-circle-slash',
-                        style: { fontSize: '0.55rem', lineHeight: 1 }
-                      })
-                    },
-                    'no-color'
-                  )
-                ]
-              }),
-              jsx('hr', { style: sepStyle }),
-              jsx('div', {
-                style: gridStyle,
-                children: PROJECT_ICONS.map(glyph => {
-                  const selected = activeIcon === glyph
-                  return jsx(
-                    'button',
-                    {
-                      type: 'button',
-                      disabled,
-                      title: glyph,
-                      'aria-label': glyph,
-                      'aria-pressed': selected,
-                      style: {
-                        height: 32,
-                        width: '100%',
-                        display: 'grid',
-                        placeItems: 'center',
-                        borderRadius: 6,
-                        border: selected
-                          ? '1px solid var(--ui-stroke-tertiary, rgba(255,255,255,0.18))'
-                          : '1px solid transparent',
-                        background: selected
-                          ? 'var(--ui-control-active-background, rgba(255,255,255,0.08))'
-                          : 'transparent',
-                        color: tint || 'var(--ui-text-tertiary, #9a9a9a)',
-                        cursor: disabled ? 'default' : 'pointer'
-                      },
-                      onClick: () => {
-                        onIcon(glyph)
-                        setOpen(false)
-                      },
-                      children: jsx('i', {
-                        'aria-hidden': true,
-                        className: cn('codicon', `codicon-${glyph}`),
-                        style: { fontSize: '0.9rem', lineHeight: 1, color: 'inherit' }
-                      })
-                    },
-                    glyph
-                  )
-                })
-              }),
-              jsxs('div', {
-                style: {
-                  display: 'flex',
-                  justifyContent: 'flex-end',
-                  gap: 8,
-                  marginTop: 10
-                },
-                children: [
-                  jsx('button', {
-                    type: 'button',
-                    disabled,
-                    className:
-                      'h-7 rounded-md border border-(--ui-stroke-secondary) bg-(--ui-control-hover-background) px-3 text-xs font-medium text-foreground hover:border-(--ui-stroke-tertiary) disabled:opacity-50',
-                    onClick: () => setOpen(false),
-                    children: t('appearanceDone')
-                  })
-                ]
-              })
-            ]
-          })
-        : null
+      })
     ]
   })
 }
