@@ -680,29 +680,40 @@ async function pickLocalDirectory() {
 }
 
 /**
- * Icon + color picker (compact).
- * Icon = one clickable glyph that opens an overlay grid (keeps edit modal short).
- * Color = compact swatch row. No ColorSwatches / Tip-asChild (disk-plugin safe).
+ * Name + appearance: glyph trigger left of the name field.
+ * Open panel = color swatches → separator → 5-col icons (live-tinted) → Done.
+ * Pick icon or Done closes. Inline styles (Desktop purge-safe).
  */
-function AppearancePicker({ icon, color, onIcon, onColor, disabled }) {
+function NameWithAppearance({
+  name,
+  setName,
+  icon,
+  color,
+  onIcon,
+  onColor,
+  disabled,
+  autoFocus,
+  namePlaceholder,
+  onSubmitEnter
+}) {
   const t = usePluginI18n(ID)
   const activeIcon = icon || 'folder-library'
-  const [iconOpen, setIconOpen] = useState(false)
+  const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
 
   useEffect(() => {
-    if (!iconOpen) return
+    if (!open) return
     const onKey = e => {
       if (e.key === 'Escape') {
         e.stopPropagation()
-        setIconOpen(false)
+        setOpen(false)
       }
     }
     const onPointer = e => {
       const el = rootRef.current
       if (!el) return
       if (el.contains(e.target)) return
-      setIconOpen(false)
+      setOpen(false)
     }
     document.addEventListener('keydown', onKey, true)
     document.addEventListener('pointerdown', onPointer, true)
@@ -710,15 +721,12 @@ function AppearancePicker({ icon, color, onIcon, onColor, disabled }) {
       document.removeEventListener('keydown', onKey, true)
       document.removeEventListener('pointerdown', onPointer, true)
     }
-  }, [iconOpen])
+  }, [open])
 
-  // Inline styles — Desktop plugin CSS often purges uncommon Tailwind
-  // (grid-cols-7, bg with comma fallbacks), which left the picker transparent
-  // and single-column.
   const panelStyle = {
     display: 'block',
     width: '100%',
-    marginTop: 6,
+    marginTop: 8,
     padding: 10,
     borderRadius: 8,
     border: '1px solid var(--ui-stroke-secondary, rgba(255,255,255,0.12))',
@@ -726,11 +734,26 @@ function AppearancePicker({ icon, color, onIcon, onColor, disabled }) {
     boxShadow: '0 10px 28px rgba(0,0,0,0.45)',
     boxSizing: 'border-box'
   }
+  const swatchRowStyle = {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+    justifyContent: 'center'
+  }
+  const sepStyle = {
+    height: 1,
+    width: '100%',
+    margin: '10px 0',
+    background: 'var(--ui-stroke-secondary, rgba(255,255,255,0.12))',
+    border: 'none'
+  }
   const gridStyle = {
     display: 'grid',
     gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
     gap: 6
   }
+  const tint = color || undefined
 
   return jsxs('div', {
     ref: rootRef,
@@ -738,30 +761,28 @@ function AppearancePicker({ icon, color, onIcon, onColor, disabled }) {
     children: [
       jsx('span', {
         className: 'text-[0.6875rem] font-medium text-(--ui-text-tertiary)',
-        children: t('appearanceLabel')
+        children: t('nameLabel')
       }),
-
-      // Single row: icon trigger + swatches + clear color.
       jsxs('div', {
         className: 'flex items-center gap-2',
         children: [
           jsx('button', {
             type: 'button',
             disabled,
-            'aria-label': t('pickIconTip'),
-            'aria-expanded': iconOpen,
+            'aria-label': t('appearanceOpen'),
+            'aria-expanded': open,
             'aria-haspopup': 'dialog',
-            title: activeIcon,
+            title: t('appearanceOpen'),
             className: cn(
               'grid size-9 shrink-0 place-items-center rounded-md border transition disabled:opacity-50',
-              iconOpen
+              open
                 ? 'border-(--ui-accent) bg-(--ui-control-active-background)'
                 : 'border-(--ui-stroke-secondary) bg-(--ui-control-hover-background) hover:border-(--ui-stroke-tertiary)'
             ),
             style: color ? { color } : undefined,
             onClick: () => {
               if (disabled) return
-              setIconOpen(v => !v)
+              setOpen(v => !v)
             },
             children: jsx('i', {
               'aria-hidden': true,
@@ -769,136 +790,162 @@ function AppearancePicker({ icon, color, onIcon, onColor, disabled }) {
               style: { fontSize: '1.1rem', lineHeight: 1 }
             })
           }),
-
-          jsx('div', {
-            className: 'flex min-w-0 flex-1 flex-wrap items-center gap-1.5',
-            children: [
-              ...SWATCHES.map(swatch =>
-                jsx(
-                  'button',
-                  {
-                    type: 'button',
-                    disabled,
-                    title: swatch,
-                    'aria-label': swatch,
-                    className:
-                      'size-4 shrink-0 rounded-full transition-transform hover:scale-110 disabled:opacity-50',
-                    style: {
-                      backgroundColor: swatch,
-                      color: swatch,
-                      boxShadow:
-                        color === swatch
-                          ? '0 0 0 2px var(--ui-bg-elevated, #111), 0 0 0 3.5px currentColor'
-                          : undefined
-                    },
-                    onClick: () => onColor(color === swatch ? null : swatch)
-                  },
-                  swatch
-                )
-              ),
-              jsx(
-                'button',
-                {
-                  type: 'button',
-                  disabled,
-                  title: t('noColor'),
-                  'aria-label': t('noColor'),
-                  className: cn(
-                    'grid size-4 shrink-0 place-items-center rounded-full border border-(--ui-stroke-secondary) text-(--ui-text-quaternary) transition hover:text-foreground disabled:opacity-50',
-                    !color && 'border-(--ui-accent) text-foreground'
-                  ),
-                  onClick: () => onColor(null),
-                  children: jsx('i', {
-                    'aria-hidden': true,
-                    className: 'codicon codicon-circle-slash',
-                    style: { fontSize: '0.55rem', lineHeight: 1 }
-                  })
-                },
-                'no-color'
-              )
-            ]
+          jsx(Input, {
+            autoFocus: Boolean(autoFocus),
+            disabled,
+            className: 'min-w-0 flex-1',
+            value: name,
+            placeholder: namePlaceholder || t('namePlaceholder'),
+            onChange: e => setName(e.target.value),
+            onKeyDown: e => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                if (typeof onSubmitEnter === 'function') onSubmitEnter()
+              }
+            }
           })
         ]
       }),
-
-      // Expand-in-place panel (not absolute) so dialog scroll/overflow can't
-      // strip the background or collapse the grid to one column.
-      iconOpen
+      open
         ? jsxs('div', {
             role: 'dialog',
-            'aria-label': t('pickIconTitle'),
+            'aria-label': t('appearanceTitle'),
             style: panelStyle,
             onClick: e => e.stopPropagation(),
             children: [
-              jsxs('div', {
-                className: 'mb-2 flex items-center justify-between gap-2',
+              jsx('div', {
+                style: swatchRowStyle,
                 children: [
-                  jsx('span', {
-                    className: 'text-[0.65rem] font-medium text-(--ui-text-tertiary)',
-                    children: t('pickIconTitle')
-                  }),
-                  jsx('button', {
-                    type: 'button',
-                    className:
-                      'grid size-5 place-items-center rounded text-(--ui-text-quaternary) hover:bg-(--ui-control-hover-background) hover:text-foreground',
-                    'aria-label': t('closeIconPicker'),
-                    onClick: () => setIconOpen(false),
-                    children: jsx('i', {
-                      'aria-hidden': true,
-                      className: 'codicon codicon-close',
-                      style: { fontSize: '0.7rem', lineHeight: 1 }
-                    })
-                  })
+                  ...SWATCHES.map(swatch =>
+                    jsx(
+                      'button',
+                      {
+                        type: 'button',
+                        disabled,
+                        title: swatch,
+                        'aria-label': swatch,
+                        'aria-pressed': color === swatch,
+                        style: {
+                          width: 18,
+                          height: 18,
+                          borderRadius: 999,
+                          border: 'none',
+                          padding: 0,
+                          cursor: disabled ? 'default' : 'pointer',
+                          backgroundColor: swatch,
+                          color: swatch,
+                          boxShadow:
+                            color === swatch
+                              ? '0 0 0 2px var(--ui-bg-elevated, #111), 0 0 0 3.5px currentColor'
+                              : '0 0 0 1px rgba(0,0,0,0.25)',
+                          flexShrink: 0
+                        },
+                        onClick: () => onColor(color === swatch ? null : swatch)
+                      },
+                      swatch
+                    )
+                  ),
+                  jsx(
+                    'button',
+                    {
+                      type: 'button',
+                      disabled,
+                      title: t('noColor'),
+                      'aria-label': t('noColor'),
+                      'aria-pressed': !color,
+                      style: {
+                        width: 18,
+                        height: 18,
+                        borderRadius: 999,
+                        display: 'grid',
+                        placeItems: 'center',
+                        padding: 0,
+                        cursor: disabled ? 'default' : 'pointer',
+                        border: !color
+                          ? '1.5px solid var(--ui-accent, #e11)'
+                          : '1px solid var(--ui-stroke-secondary, rgba(255,255,255,0.2))',
+                        background: 'transparent',
+                        color: 'var(--ui-text-tertiary, #888)',
+                        flexShrink: 0
+                      },
+                      onClick: () => onColor(null),
+                      children: jsx('i', {
+                        'aria-hidden': true,
+                        className: 'codicon codicon-circle-slash',
+                        style: { fontSize: '0.55rem', lineHeight: 1 }
+                      })
+                    },
+                    'no-color'
+                  )
                 ]
               }),
+              jsx('hr', { style: sepStyle }),
               jsx('div', {
                 style: gridStyle,
-                children: PROJECT_ICONS.map(name => {
-                  const selected = activeIcon === name
+                children: PROJECT_ICONS.map(glyph => {
+                  const selected = activeIcon === glyph
                   return jsx(
                     'button',
                     {
                       type: 'button',
                       disabled,
-                      title: name,
-                      'aria-label': name,
+                      title: glyph,
+                      'aria-label': glyph,
                       'aria-pressed': selected,
-                      className: cn(
-                        'grid place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background) disabled:opacity-50',
-                        selected && 'bg-(--ui-control-active-background) text-foreground'
-                      ),
                       style: {
                         height: 32,
                         width: '100%',
-                        color: selected && color ? color : undefined
+                        display: 'grid',
+                        placeItems: 'center',
+                        borderRadius: 6,
+                        border: selected
+                          ? '1px solid var(--ui-stroke-tertiary, rgba(255,255,255,0.18))'
+                          : '1px solid transparent',
+                        background: selected
+                          ? 'var(--ui-control-active-background, rgba(255,255,255,0.08))'
+                          : 'transparent',
+                        color: tint || 'var(--ui-text-tertiary, #9a9a9a)',
+                        cursor: disabled ? 'default' : 'pointer'
                       },
                       onClick: () => {
-                        onIcon(name)
-                        setIconOpen(false)
+                        onIcon(glyph)
+                        setOpen(false)
                       },
                       children: jsx('i', {
                         'aria-hidden': true,
-                        className: cn('codicon', `codicon-${name}`),
-                        style: { fontSize: '0.9rem', lineHeight: 1 }
+                        className: cn('codicon', `codicon-${glyph}`),
+                        style: { fontSize: '0.9rem', lineHeight: 1, color: 'inherit' }
                       })
                     },
-                    name
+                    glyph
                   )
                 })
+              }),
+              jsxs('div', {
+                style: {
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: 8,
+                  marginTop: 10
+                },
+                children: [
+                  jsx('button', {
+                    type: 'button',
+                    disabled,
+                    className:
+                      'h-7 rounded-md border border-(--ui-stroke-secondary) bg-(--ui-control-hover-background) px-3 text-xs font-medium text-foreground hover:border-(--ui-stroke-tertiary) disabled:opacity-50',
+                    onClick: () => setOpen(false),
+                    children: t('appearanceDone')
+                  })
+                ]
               })
             ]
-          })
-        : null,
-
-      !iconOpen
-        ? jsx('p', {
-            className: 'text-[0.65rem] text-(--ui-text-quaternary)',
-            children: t('appearanceHint')
           })
         : null
     ]
   })
 }
+
 
 function RemoteFolderBrowser({ open, initialPath, onClose, onSelect }) {
   const t = usePluginI18n(ID)
@@ -1529,27 +1576,17 @@ function ProjectFormDialog({ open, mode, initial, defaultProfile, onClose, onSav
               ]
             }),
             mode !== 'add-folder'
-              ? jsxs('div', {
-                  className: 'flex flex-col gap-1.5',
-                  children: [
-                    jsx('span', {
-                      className: 'text-[0.6875rem] font-medium text-(--ui-text-tertiary)',
-                      children: t('nameLabel')
-                    }),
-                    jsx(Input, {
-                      autoFocus: true,
-                      disabled: busy,
-                      value: name,
-                      placeholder: t('namePlaceholder'),
-                      onChange: e => setName(e.target.value),
-                      onKeyDown: e => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          void submit()
-                        }
-                      }
-                    })
-                  ]
+              ? jsx(NameWithAppearance, {
+                  name,
+                  setName,
+                  icon,
+                  color,
+                  onIcon: setIcon,
+                  onColor: setColor,
+                  disabled: busy,
+                  autoFocus: true,
+                  namePlaceholder: t('namePlaceholder'),
+                  onSubmitEnter: () => void submit()
                 })
               : null,
             mode === 'create' || mode === 'rename'
@@ -1671,15 +1708,6 @@ function ProjectFormDialog({ open, mode, initial, defaultProfile, onClose, onSav
                           children: t('folderRemoteHint')
                         })
                   ]
-                })
-              : null,
-            mode === 'create' || mode === 'rename'
-              ? jsx(AppearancePicker, {
-                  icon,
-                  color,
-                  disabled: busy,
-                  onIcon: setIcon,
-                  onColor: setColor
                 })
               : null,
             mode === 'rename' && initial
@@ -2479,9 +2507,12 @@ export default {
         descLabel: 'Description (optional)',
         descPlaceholder: 'What is this project for?',
         appearanceLabel: 'Icon & color',
-        appearanceHint: 'Click the icon to change it. Color tints the sidebar glyph.',
-        pickIconTip: 'Choose icon',
-        pickIconTitle: 'Project icon',
+        appearanceHint: 'Click the icon beside the name to set glyph + color.',
+        appearanceOpen: 'Icon & color',
+        appearanceTitle: 'Icon & color',
+        appearanceDone: 'Done',
+        pickIconTip: 'Icon & color',
+        pickIconTitle: 'Icon & color',
         closeIconPicker: 'Close',
         noColor: 'No color',
         colored: 'Custom color',
