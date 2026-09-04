@@ -73,7 +73,7 @@ The right status-bar chip is a **project picker**:
 - List / create / edit / delete (or archive) named projects
 - **Profile pin** — pick which Hermes profile owns the project on create/edit (`projects.db` is per-profile). Leave unset → stock **`default`**. Page header filter switches which profile you manage; changing profile on edit migrates the project record
 - **Status-bar project picker** (set/clear active project; jump to Manage)
-- Icon + color for sidebar Projects grouping
+- Icon + color for sidebar Projects grouping (compact: one icon button opens an overlay grid so the edit modal stays short)
 - Multi-folder projects: add, set primary, detach (files on disk are never deleted)
 - Remote folder browser starting at gateway `$HOME` (creates subdirs on demand)
 - Local gateway: native folder dialog when Desktop is in local mode

@@ -13,6 +13,8 @@
  *  - pin project to a Hermes profile on create/edit (projects are per-profile)
  *  - default profile id = "default" when none chosen
  *  - page filter selects which profile's projects.db you manage
+ * UX (2026-09-04b):
+ *  - appearance: single icon trigger + overlay grid (keeps edit modal short)
  */
 import {
   Button,
@@ -678,125 +680,198 @@ async function pickLocalDirectory() {
 }
 
 /**
- * Icon + color picker. Hand-rolled (no ColorSwatches / Tip-asChild) so disk
- * plugins don't depend on tooltip portals or SDK export skew — fixed 6-col
- * cells matching stock project-appearance.tsx.
+ * Icon + color picker (compact).
+ * Icon = one clickable glyph that opens an overlay grid (keeps edit modal short).
+ * Color = compact swatch row. No ColorSwatches / Tip-asChild (disk-plugin safe).
  */
 function AppearancePicker({ icon, color, onIcon, onColor, disabled }) {
   const t = usePluginI18n(ID)
   const activeIcon = icon || 'folder-library'
+  const [iconOpen, setIconOpen] = useState(false)
+  const rootRef = useRef(null)
+
+  useEffect(() => {
+    if (!iconOpen) return
+    const onKey = e => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        setIconOpen(false)
+      }
+    }
+    const onPointer = e => {
+      const el = rootRef.current
+      if (!el) return
+      if (el.contains(e.target)) return
+      setIconOpen(false)
+    }
+    document.addEventListener('keydown', onKey, true)
+    document.addEventListener('pointerdown', onPointer, true)
+    return () => {
+      document.removeEventListener('keydown', onKey, true)
+      document.removeEventListener('pointerdown', onPointer, true)
+    }
+  }, [iconOpen])
 
   return jsxs('div', {
-    className: 'flex flex-col gap-2',
+    ref: rootRef,
+    className: 'relative flex flex-col gap-1.5',
     children: [
       jsx('span', {
         className: 'text-[0.6875rem] font-medium text-(--ui-text-tertiary)',
         children: t('appearanceLabel')
       }),
 
-      // Live preview — makes selection obvious even if a glyph is missing.
+      // Single row: icon trigger + swatches + clear color.
       jsxs('div', {
-        className:
-          'flex items-center gap-2 rounded-md border border-(--ui-stroke-secondary) bg-(--ui-control-hover-background) px-2.5 py-2',
+        className: 'flex items-center gap-2',
         children: [
-          jsx('div', {
-            className: 'grid size-9 place-items-center rounded-md bg-(--ui-bg-elevated,transparent)',
-            style: color ? { color } : undefined,
-            children: jsx('i', {
-              'aria-hidden': true,
-              className: cn('codicon', `codicon-${activeIcon}`),
-              style: { fontSize: '1.15rem', lineHeight: 1 }
+          jsx(Tip, {
+            label: t('pickIconTip'),
+            children: jsx('button', {
+              type: 'button',
+              disabled,
+              'aria-label': t('pickIconTip'),
+              'aria-expanded': iconOpen,
+              'aria-haspopup': 'dialog',
+              title: activeIcon,
+              className: cn(
+                'grid size-9 shrink-0 place-items-center rounded-md border transition disabled:opacity-50',
+                iconOpen
+                  ? 'border-(--ui-accent) bg-(--ui-control-active-background)'
+                  : 'border-(--ui-stroke-secondary) bg-(--ui-control-hover-background) hover:border-(--ui-stroke-tertiary)'
+              ),
+              style: color ? { color } : undefined,
+              onClick: () => {
+                if (disabled) return
+                setIconOpen(v => !v)
+              },
+              children: jsx('i', {
+                'aria-hidden': true,
+                className: cn('codicon', `codicon-${activeIcon}`),
+                style: { fontSize: '1.1rem', lineHeight: 1 }
+              })
             })
           }),
-          jsxs('div', {
-            className: 'min-w-0 flex-1',
+
+          jsx('div', {
+            className: 'flex min-w-0 flex-1 flex-wrap items-center gap-1.5',
             children: [
-              jsx('div', {
-                className: 'truncate text-xs font-medium text-foreground',
-                children: activeIcon
-              }),
-              jsx('div', {
-                className: 'text-[0.65rem] text-(--ui-text-quaternary)',
-                children: color ? t('colored') : t('noColor')
-              })
+              ...SWATCHES.map(swatch =>
+                jsx(
+                  'button',
+                  {
+                    type: 'button',
+                    disabled,
+                    title: swatch,
+                    'aria-label': swatch,
+                    className:
+                      'size-4 shrink-0 rounded-full transition-transform hover:scale-110 disabled:opacity-50',
+                    style: {
+                      backgroundColor: swatch,
+                      color: swatch,
+                      boxShadow:
+                        color === swatch
+                          ? '0 0 0 2px var(--ui-bg-elevated, #111), 0 0 0 3.5px currentColor'
+                          : undefined
+                    },
+                    onClick: () => onColor(color === swatch ? null : swatch)
+                  },
+                  swatch
+                )
+              ),
+              jsx(
+                'button',
+                {
+                  type: 'button',
+                  disabled,
+                  title: t('noColor'),
+                  'aria-label': t('noColor'),
+                  className: cn(
+                    'grid size-4 shrink-0 place-items-center rounded-full border border-(--ui-stroke-secondary) text-(--ui-text-quaternary) transition hover:text-foreground disabled:opacity-50',
+                    !color && 'border-(--ui-accent) text-foreground'
+                  ),
+                  onClick: () => onColor(null),
+                  children: jsx('i', {
+                    'aria-hidden': true,
+                    className: 'codicon codicon-circle-slash',
+                    style: { fontSize: '0.55rem', lineHeight: 1 }
+                  })
+                },
+                'no-color'
+              )
             ]
           })
         ]
       }),
 
-      // Color dots — centered in the modal width.
-      jsx('div', {
-        className: 'mx-auto grid w-fit grid-cols-6 justify-items-center gap-1.5',
-        children: SWATCHES.map(swatch =>
-          jsx(
-            'button',
-            {
-              type: 'button',
-              disabled,
-              title: swatch,
-              'aria-label': swatch,
-              className:
-                'size-5 rounded-full transition-transform hover:scale-110 disabled:opacity-50',
-              style: {
-                backgroundColor: swatch,
-                color: swatch,
-                boxShadow:
-                  color === swatch
-                    ? '0 0 0 2px var(--ui-bg-elevated, #111), 0 0 0 3.5px currentColor'
-                    : undefined
-              },
-              onClick: () => onColor(color === swatch ? null : swatch)
-            },
-            swatch
-          )
-        )
-      }),
-      jsx('button', {
-        type: 'button',
-        disabled,
-        className:
-          'flex w-full items-center justify-center gap-1.5 rounded-md py-1 text-xs text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background) hover:text-foreground disabled:opacity-50',
-        onClick: () => onColor(null),
-        children: [
-          jsx('i', {
-            key: 'i',
-            'aria-hidden': true,
-            className: 'codicon codicon-circle-slash',
-            style: { fontSize: '0.75rem', lineHeight: 1 }
-          }),
-          jsx('span', { key: 't', children: t('noColor') })
-        ]
-      }),
-
-      // Icon grid — fixed 32px cells; raw <i class="codicon"> (not Tip-wrapped).
-      jsx('div', {
-        className: 'grid grid-cols-6 gap-1.5',
-        children: PROJECT_ICONS.map(name => {
-          const selected = icon === name
-          return jsx(
-            'button',
-            {
-              type: 'button',
-              disabled,
-              title: name,
-              'aria-label': name,
-              'aria-pressed': selected,
-              className: cn(
-                'grid h-8 w-full place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background) disabled:opacity-50',
-                selected && 'bg-(--ui-control-active-background) text-foreground'
-              ),
-              style: selected && color ? { color } : undefined,
-              onClick: () => onIcon(selected ? null : name),
-              children: jsx('i', {
-                'aria-hidden': true,
-                className: cn('codicon', `codicon-${name}`),
-                style: { fontSize: '0.875rem', lineHeight: 1 }
+      // Icon overlay — anchored under the trigger; closes on pick / Esc / outside.
+      iconOpen
+        ? jsxs('div', {
+            role: 'dialog',
+            'aria-label': t('pickIconTitle'),
+            className: cn(
+              'absolute left-0 top-[calc(100%+0.35rem)] z-50 w-full min-w-[16rem]',
+              'rounded-md border border-(--ui-stroke-secondary)',
+              'bg-(--ui-control-background,var(--card)) p-2 shadow-lg'
+            ),
+            onClick: e => e.stopPropagation(),
+            children: [
+              jsxs('div', {
+                className: 'mb-1.5 flex items-center justify-between gap-2 px-0.5',
+                children: [
+                  jsx('span', {
+                    className: 'text-[0.65rem] font-medium text-(--ui-text-tertiary)',
+                    children: t('pickIconTitle')
+                  }),
+                  jsx('button', {
+                    type: 'button',
+                    className:
+                      'grid size-5 place-items-center rounded text-(--ui-text-quaternary) hover:bg-(--ui-control-hover-background) hover:text-foreground',
+                    'aria-label': t('closeIconPicker'),
+                    onClick: () => setIconOpen(false),
+                    children: jsx('i', {
+                      'aria-hidden': true,
+                      className: 'codicon codicon-close',
+                      style: { fontSize: '0.7rem', lineHeight: 1 }
+                    })
+                  })
+                ]
+              }),
+              jsx('div', {
+                className: 'grid grid-cols-7 gap-1',
+                children: PROJECT_ICONS.map(name => {
+                  const selected = activeIcon === name
+                  return jsx(
+                    'button',
+                    {
+                      type: 'button',
+                      disabled,
+                      title: name,
+                      'aria-label': name,
+                      'aria-pressed': selected,
+                      className: cn(
+                        'grid h-8 w-full place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background) disabled:opacity-50',
+                        selected && 'bg-(--ui-control-active-background) text-foreground'
+                      ),
+                      style: selected && color ? { color } : undefined,
+                      onClick: () => {
+                        onIcon(name)
+                        setIconOpen(false)
+                      },
+                      children: jsx('i', {
+                        'aria-hidden': true,
+                        className: cn('codicon', `codicon-${name}`),
+                        style: { fontSize: '0.875rem', lineHeight: 1 }
+                      })
+                    },
+                    name
+                  )
+                })
               })
-            },
-            name
-          )
-        })
-      }),
+            ]
+          })
+        : null,
+
       jsx('p', {
         className: 'text-[0.65rem] text-(--ui-text-quaternary)',
         children: t('appearanceHint')
@@ -1422,7 +1497,7 @@ function ProjectFormDialog({ open, mode, initial, defaultProfile, onClose, onSav
           if (!next && !busy) onClose && onClose()
         },
         children: jsxs(DialogContent, {
-          className: 'max-h-[min(42rem,calc(100vh-3rem))] max-w-md overflow-y-auto',
+          className: 'max-h-[min(36rem,calc(100vh-4rem))] max-w-md overflow-y-auto',
           onInteractOutside: e => {
             if (busy) e.preventDefault()
           },
@@ -2426,7 +2501,10 @@ export default {
         descLabel: 'Description (optional)',
         descPlaceholder: 'What is this project for?',
         appearanceLabel: 'Icon & color',
-        appearanceHint: 'Shows in the sidebar Projects grouping.',
+        appearanceHint: 'Click the icon to change it. Color tints the sidebar glyph.',
+        pickIconTip: 'Choose icon',
+        pickIconTitle: 'Project icon',
+        closeIconPicker: 'Close',
         noColor: 'No color',
         colored: 'Custom color',
         browse: 'Browse',
