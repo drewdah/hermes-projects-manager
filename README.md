@@ -71,6 +71,7 @@ The right status-bar chip is a **project picker**:
 ## What it does
 
 - List / create / edit / delete (or archive) named projects
+- **Profile pin** — pick which Hermes profile owns the project on create/edit (`projects.db` is per-profile). Leave unset → stock **`default`**. Page header filter switches which profile you manage; changing profile on edit migrates the project record
 - **Status-bar project picker** (set/clear active project; jump to Manage)
 - Icon + color for sidebar Projects grouping
 - Multi-folder projects: add, set primary, detach (files on disk are never deleted)
