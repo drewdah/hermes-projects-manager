@@ -12,14 +12,14 @@ List projects, primary folder, Active badge, and trash on the row. Open via top 
 
 ![Projects manager](docs/screenshots/01-manager.png)
 
-### Edit / New project
+### New / Edit project (popover closed)
 
 - **Name row:** icon trigger on the **left** of the name field  
-- **Profile** select (per-profile `projects.db`; leave as **default** if unsure)  
-- Folders (primary / detach / add), description  
+- **Profile** select (per-profile `projects.db`; leave as **default** / KITT if unsure)  
+- Folder (Browse), optional description  
 - Appearance opens as a **floating Popover** (does not grow the modal)
 
-![Edit project modal](docs/screenshots/02-edit-modal.png)
+![New project modal](docs/screenshots/02-edit-modal.png)
 
 ### Appearance popover (icon + color)
 
@@ -30,7 +30,7 @@ Click the glyph beside the name. Panel floats over the dialog:
 3. **5-column** icon grid  
 4. **Done** — or pick an icon to apply and close  
 
-![Appearance popover](docs/screenshots/05-appearance-popover.png)
+![Appearance popover open](docs/screenshots/05-appearance-popover.png)
 
 ### Status bar picker
 
@@ -44,7 +44,7 @@ Stock **Grouping → Project** shows sessions under the project once cwd matches
 
 ![Sidebar Projects grouping](docs/screenshots/04-sidebar-grouping.png)
 
-> **Note:** `01`–`04` may lag slightly behind the latest chrome. Prefer `05-appearance-popover.png` for the current appearance control. Re-capture `02-edit-modal.png` after a UI pass so the name-row glyph + profile field match shipping.
+> **Note:** `02` and `05` reflect the current New project + appearance Popover UX (2026-09-04). `01` / `03` / `04` are still valid for list, status chip, and sidebar grouping.
 
 ## Requirements
 
