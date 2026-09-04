@@ -9,6 +9,10 @@
  *  - remote folder browser + path autocomplete (LXC via complete.path / shell.exec)
  *  - create folder on remote while creating a project
  *  - show description on list rows; no footer help blurb
+ * UX (2026-09-04):
+ *  - pin project to a Hermes profile on create/edit (projects are per-profile)
+ *  - default profile id = "default" when none chosen
+ *  - page filter selects which profile's projects.db you manage
  */
 import {
   Button,
@@ -281,20 +285,123 @@ function installNavBridge() {
   }
 }
 
+/** Stock id for the launch / default profile. Projects land here unless chosen. */
+const DEFAULT_PROFILE = 'default'
+
+function normalizeProfileKey(value) {
+  const s = String(value == null ? '' : value).trim()
+  if (!s || s === '__all__' || s === 'all' || s === '*') return DEFAULT_PROFILE
+  return s
+}
+
+/** Active Desktop profile scope, falling back to default. */
 function profileName() {
   try {
     const p = host.state.profile?.get?.()
-    if (typeof p === 'string' && p.trim() && p !== '__all__') return p.trim()
+    if (typeof p === 'string' && p.trim() && p !== '__all__' && p !== 'all') {
+      return normalizeProfileKey(p)
+    }
   } catch (_) {}
-  return 'default'
+  return DEFAULT_PROFILE
 }
 
 function rpcParams(extra = {}) {
-  return { profile: profileName(), ...extra }
+  const override = extra && Object.prototype.hasOwnProperty.call(extra, 'profile')
+    ? extra.profile
+    : undefined
+  const profile = normalizeProfileKey(override != null ? override : profileName())
+  const rest = { ...(extra || {}) }
+  delete rest.profile
+  return { profile, ...rest }
 }
 
 async function projectsRequest(method, params = {}) {
   return host.request(method, rpcParams(params))
+}
+
+/**
+ * List Hermes profile ids available on this gateway.
+ * Always includes "default". Uses profiles.list when present.
+ */
+async function listHermesProfiles() {
+  const byName = new Map()
+  const add = (row) => {
+    if (!row) return
+    const name = normalizeProfileKey(
+      (typeof row === 'string' ? row : row.name || row.id || row.profile || '')
+    )
+    if (!name) return
+    const display =
+      (typeof row === 'object' &&
+        (row.display_name || row.displayName || row.title || row.label)) ||
+      ''
+    const isDefault = Boolean(
+      typeof row === 'object' && (row.is_default || row.isDefault || name === DEFAULT_PROFILE)
+    )
+    const prev = byName.get(name) || { name, displayName: '', isDefault: name === DEFAULT_PROFILE }
+    byName.set(name, {
+      name,
+      displayName: String(display || prev.displayName || '').trim(),
+      isDefault: isDefault || prev.isDefault || name === DEFAULT_PROFILE
+    })
+  }
+
+  add({ name: DEFAULT_PROFILE, display_name: 'default', is_default: true })
+
+  try {
+    const res = await host.request('profiles.list', { include_sessions: false })
+    const rows =
+      (res && (res.profiles || res.items || res.data)) ||
+      (Array.isArray(res) ? res : [])
+    if (Array.isArray(rows)) rows.forEach(add)
+  } catch (_) {
+    /* profiles.list may be missing on older gateways — still offer default */
+  }
+
+  // Stable: default first, then alpha.
+  return [...byName.values()].sort((a, b) => {
+    if (a.name === DEFAULT_PROFILE) return -1
+    if (b.name === DEFAULT_PROFILE) return 1
+    return a.name.localeCompare(b.name)
+  })
+}
+
+function profileLabel(rowOrName) {
+  if (!rowOrName) return DEFAULT_PROFILE
+  if (typeof rowOrName === 'string') return rowOrName
+  const name = rowOrName.name || DEFAULT_PROFILE
+  const dn = String(rowOrName.displayName || '').trim()
+  if (dn && dn.toLowerCase() !== String(name).toLowerCase()) return `${dn} (${name})`
+  if (name === DEFAULT_PROFILE) return 'default'
+  return name
+}
+
+/** Native select styled for the dialog/page — no Select* import dependency. */
+function ProfileSelect({ value, onChange, options, disabled, id }) {
+  const opts = Array.isArray(options) && options.length
+    ? options
+    : [{ name: DEFAULT_PROFILE, displayName: 'default', isDefault: true }]
+  return jsx('select', {
+    id,
+    disabled: Boolean(disabled),
+    value: normalizeProfileKey(value),
+    onChange: e => onChange && onChange(normalizeProfileKey(e.target.value)),
+    className: cn(
+      'h-8 w-full rounded-md border border-(--ui-stroke-secondary) bg-transparent',
+      'px-2 text-xs text-foreground outline-none',
+      'focus-visible:border-(--ui-accent) disabled:opacity-50'
+    ),
+    children: opts.map(row =>
+      jsx(
+        'option',
+        {
+          value: row.name,
+          children: profileLabel(row)
+        },
+        row.name
+      )
+    )
+  })
 }
 
 /**
@@ -953,7 +1060,7 @@ function RemoteFolderBrowser({ open, initialPath, onClose, onSelect }) {
   })
 }
 
-function ProjectFormDialog({ open, mode, initial, onClose, onSaved }) {
+function ProjectFormDialog({ open, mode, initial, defaultProfile, onClose, onSaved }) {
   const t = usePluginI18n(ID)
   const [name, setName] = useState('')
   const [folder, setFolder] = useState('')
@@ -969,8 +1076,27 @@ function ProjectFormDialog({ open, mode, initial, onClose, onSaved }) {
   const [backendMode, setBackendMode] = useState('remote')
   /** Live folder list while editing (rename mode). */
   const [editFolders, setEditFolders] = useState([])
+  /** Hermes profile this project is pinned to (per-profile projects.db). */
+  const [profile, setProfile] = useState(DEFAULT_PROFILE)
+  const [profileOptions, setProfileOptions] = useState([
+    { name: DEFAULT_PROFILE, displayName: 'default', isDefault: true }
+  ])
   const suggestTimer = useRef(null)
   const isLocal = backendMode === 'local'
+  const sourceProfile = normalizeProfileKey(
+    (initial && (initial.profile || initial._profile)) || defaultProfile || DEFAULT_PROFILE
+  )
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    void listHermesProfiles().then(rows => {
+      if (!cancelled && Array.isArray(rows) && rows.length) setProfileOptions(rows)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -987,12 +1113,14 @@ function ProjectFormDialog({ open, mode, initial, onClose, onSaved }) {
       setDescription(initial.description || '')
       setIcon(initial.icon || null)
       setColor(initial.color || null)
+      setProfile(sourceProfile)
     } else if (mode === 'add-folder' && initial) {
       setName(initial.name || '')
       setFolder('')
       setDescription('')
       setIcon(initial.icon || null)
       setColor(initial.color || null)
+      setProfile(sourceProfile)
       void resolveGatewayHome().then(({ home }) => {
         // Seed add-folder path under home so Browse starts somewhere sensible.
         setFolder(prev => prev || home)
@@ -1002,13 +1130,15 @@ function ProjectFormDialog({ open, mode, initial, onClose, onSaved }) {
       setDescription('')
       setIcon('folder-library')
       setColor(null)
+      // Create defaults to the page filter, else stock "default" profile.
+      setProfile(normalizeProfileKey(defaultProfile || DEFAULT_PROFILE))
       // Default folder = gateway $HOME (always exists). Subdirs are created on demand.
       setFolder(cachedHomeDir || HOME_FALLBACK)
       void resolveGatewayHome().then(({ home }) => {
         setFolder(prev => (!prev || prev === HOME_FALLBACK ? home : prev))
       })
     }
-  }, [open, mode, initial])
+  }, [open, mode, initial, defaultProfile, sourceProfile])
 
 
   useEffect(() => {
@@ -1051,7 +1181,7 @@ function ProjectFormDialog({ open, mode, initial, onClose, onSaved }) {
   const refreshInitialFolders = async () => {
     if (!initial?.id) return
     try {
-      const res = await projectsRequest('projects.get', { id: initial.id })
+      const res = await projectsRequest('projects.get', { id: initial.id, profile: sourceProfile })
       const proj = res && res.project
       if (proj) {
         setEditFolders(folderList(proj))
@@ -1092,7 +1222,7 @@ function ProjectFormDialog({ open, mode, initial, onClose, onSaved }) {
           if (!/File exists|already exists/i.test(msg)) throw err
         }
       }
-      await projectsRequest('projects.add_folder', { id: initial.id, path })
+      await projectsRequest('projects.add_folder', { id: initial.id, path, profile: sourceProfile })
       setFolder('')
       host.notify({ kind: 'success', message: t('folderAdded', path) })
       await refreshInitialFolders()
@@ -1111,7 +1241,7 @@ function ProjectFormDialog({ open, mode, initial, onClose, onSaved }) {
     setBusy(true)
     setError('')
     try {
-      await projectsRequest('projects.set_primary', { id: initial.id, path })
+      await projectsRequest('projects.set_primary', { id: initial.id, path, profile: sourceProfile })
       host.notify({ kind: 'success', message: t('primarySet', path) })
       await refreshInitialFolders()
       nudgeSidebarProjectTree()
@@ -1133,7 +1263,7 @@ function ProjectFormDialog({ open, mode, initial, onClose, onSaved }) {
     setBusy(true)
     setError('')
     try {
-      await projectsRequest('projects.remove_folder', { id: initial.id, path })
+      await projectsRequest('projects.remove_folder', { id: initial.id, path, profile: sourceProfile })
       host.notify({ kind: 'success', message: t('folderRemoved', path) })
       await refreshInitialFolders()
       nudgeSidebarProjectTree()
@@ -1153,6 +1283,7 @@ function ProjectFormDialog({ open, mode, initial, onClose, onSaved }) {
     try {
       const iconVal = icon || undefined
       const colorVal = color || undefined
+      let skipGenericSaved = false
       if (mode === 'create' || mode === 'add-folder') {
         const path = folder.trim()
         if (!isLocal && looksLikeWindowsPath(path)) {
@@ -1167,6 +1298,7 @@ function ProjectFormDialog({ open, mode, initial, onClose, onSaved }) {
           throw new Error('Folder should be an absolute path the local Hermes can open.')
         }
       }
+      const targetProfile = normalizeProfileKey(profile || DEFAULT_PROFILE)
       if (mode === 'create') {
         const path = folder.trim()
         // Create the directory if needed (e.g. ~/my-app) — home itself already exists.
@@ -1180,6 +1312,7 @@ function ProjectFormDialog({ open, mode, initial, onClose, onSaved }) {
           }
         }
         await projectsRequest('projects.create', {
+          profile: targetProfile,
           name: name.trim(),
           folders: [path],
           primary_path: path,
@@ -1189,13 +1322,54 @@ function ProjectFormDialog({ open, mode, initial, onClose, onSaved }) {
           use: true
         })
       } else if (mode === 'rename' && initial) {
-        await projectsRequest('projects.update', {
-          id: initial.id,
+        const meta = {
           name: name.trim(),
           description: description.trim() || '',
           icon: icon == null ? '' : icon,
           color: color == null ? '' : color
-        })
+        }
+        if (targetProfile === sourceProfile) {
+          await projectsRequest('projects.update', {
+            profile: sourceProfile,
+            id: initial.id,
+            ...meta
+          })
+        } else {
+          // Move pin: recreate under the target profile's projects.db, then drop source.
+          const folders = (editFolders.length ? editFolders : folderList(initial)).map(f => f.path).filter(Boolean)
+          if (!folders.length) throw new Error('Project needs at least one folder to move profiles')
+          const primary =
+            (editFolders.find(f => f.isPrimary) || editFolders[0] || {}).path ||
+            initial.primary_path ||
+            folders[0]
+          const created = await projectsRequest('projects.create', {
+            profile: targetProfile,
+            name: meta.name,
+            folders,
+            primary_path: primary,
+            description: meta.description || undefined,
+            icon: meta.icon || undefined,
+            color: meta.color || undefined,
+            use: false
+          })
+          try {
+            await projectsRequest('projects.delete', { profile: sourceProfile, id: initial.id })
+          } catch (delErr) {
+            // Best-effort cleanup of the new copy if source delete fails hard.
+            const newId = created && created.project && created.project.id
+            if (newId) {
+              try {
+                await projectsRequest('projects.delete', { profile: targetProfile, id: newId })
+              } catch (_) {}
+            }
+            throw delErr
+          }
+          skipGenericSaved = true
+          host.notify({
+            kind: 'success',
+            message: t('movedProfile', meta.name, targetProfile)
+          })
+        }
       } else if (mode === 'add-folder' && initial) {
         const path = folder.trim()
         if (!isLocal) {
@@ -1207,6 +1381,7 @@ function ProjectFormDialog({ open, mode, initial, onClose, onSaved }) {
           }
         }
         await projectsRequest('projects.add_folder', {
+          profile: sourceProfile,
           id: initial.id,
           path
         })
@@ -1214,7 +1389,7 @@ function ProjectFormDialog({ open, mode, initial, onClose, onSaved }) {
       try {
         haptic('tap')
       } catch (_) {}
-      host.notify({ kind: 'success', message: t('saved') })
+      if (!skipGenericSaved) host.notify({ kind: 'success', message: t('saved') })
       // Sidebar tree is a separate client cache — push appearance + force refresh.
       try {
         paintSidebarProjectLook({
@@ -1278,6 +1453,30 @@ function ProjectFormDialog({ open, mode, initial, onClose, onSaved }) {
                           void submit()
                         }
                       }
+                    })
+                  ]
+                })
+              : null,
+            mode === 'create' || mode === 'rename'
+              ? jsxs('div', {
+                  className: 'flex flex-col gap-1.5',
+                  children: [
+                    jsx('span', {
+                      className: 'text-[0.6875rem] font-medium text-(--ui-text-tertiary)',
+                      children: t('profileLabel')
+                    }),
+                    jsx(ProfileSelect, {
+                      value: profile,
+                      disabled: busy,
+                      options: profileOptions,
+                      onChange: setProfile
+                    }),
+                    jsx('p', {
+                      className: 'text-[0.65rem] text-(--ui-text-quaternary)',
+                      children:
+                        mode === 'rename' && normalizeProfileKey(profile) !== sourceProfile
+                          ? t('profileMoveHint', sourceProfile, normalizeProfileKey(profile))
+                          : t('profileHint')
                     })
                   ]
                 })
@@ -1691,13 +1890,50 @@ function ProjectRow({ project, activeId, onRename, onDelete }) {
 function ProjectsPage() {
   const t = usePluginI18n(ID)
   const qc = useQueryClient()
-  const profile = useValue(host.state.profile) || profileName()
+  const deskProfile = useValue(host.state.profile)
+  // Page filter: which profile's projects.db we manage. Defaults to stock "default".
+  const [selectedProfile, setSelectedProfile] = useState(DEFAULT_PROFILE)
+  const [profileOptions, setProfileOptions] = useState([
+    { name: DEFAULT_PROFILE, displayName: 'default', isDefault: true }
+  ])
   const [dialog, setDialog] = useState(null)
   const [pendingDelete, setPendingDelete] = useState(null)
+  const profile = normalizeProfileKey(selectedProfile || DEFAULT_PROFILE)
+
+  useEffect(() => {
+    let cancelled = false
+    void listHermesProfiles().then(rows => {
+      if (cancelled || !Array.isArray(rows) || !rows.length) return
+      setProfileOptions(rows)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // One-shot seed from the active Desktop profile (if any). After that the
+  // page filter is user-owned — create/edit still fall back to "default".
+  const seededRef = useRef(false)
+  useEffect(() => {
+    if (seededRef.current) return
+    seededRef.current = true
+    const live =
+      typeof deskProfile === 'string' && deskProfile && deskProfile !== '__all__' && deskProfile !== 'all'
+        ? normalizeProfileKey(deskProfile)
+        : DEFAULT_PROFILE
+    setSelectedProfile(live || DEFAULT_PROFILE)
+  }, [deskProfile])
 
   const listQuery = useQuery({
     queryKey: [...QUERY_KEY, profile],
-    queryFn: async () => projectsRequest('projects.list', {}),
+    queryFn: async () => {
+      const res = await projectsRequest('projects.list', { profile })
+      const raw = (res && res.projects) || []
+      const stamped = Array.isArray(raw)
+        ? raw.map(p => (p && typeof p === 'object' ? { ...p, profile, _profile: profile } : p))
+        : []
+      return { ...(res || {}), projects: stamped }
+    },
     refetchInterval: 15_000,
     retry: 1
   })
@@ -1713,9 +1949,15 @@ function ProjectsPage() {
 
   const activeId = (listQuery.data && listQuery.data.active_id) || null
 
+  const projectProfileOf = project =>
+    normalizeProfileKey((project && (project.profile || project._profile)) || profile)
+
   const onSetActive = async project => {
     try {
-      await projectsRequest('projects.set_active', { id: project.id })
+      await projectsRequest('projects.set_active', {
+        id: project.id,
+        profile: projectProfileOf(project)
+      })
       host.notify({ kind: 'success', message: t('activated', project.name) })
       refresh()
       nudgeSidebarProjectTree()
@@ -1729,7 +1971,11 @@ function ProjectsPage() {
 
   const onSetPrimary = async (project, path) => {
     try {
-      await projectsRequest('projects.set_primary', { id: project.id, path })
+      await projectsRequest('projects.set_primary', {
+        id: project.id,
+        path,
+        profile: projectProfileOf(project)
+      })
       host.notify({ kind: 'success', message: t('primarySet', path) })
       refresh()
       nudgeSidebarProjectTree()
@@ -1751,7 +1997,11 @@ function ProjectsPage() {
       return
     }
     try {
-      await projectsRequest('projects.remove_folder', { id: project.id, path })
+      await projectsRequest('projects.remove_folder', {
+        id: project.id,
+        path,
+        profile: projectProfileOf(project)
+      })
       host.notify({ kind: 'success', message: t('folderRemoved', path) })
       refresh()
       nudgeSidebarProjectTree()
@@ -1766,14 +2016,15 @@ function ProjectsPage() {
   const onDeleteConfirm = async () => {
     const project = pendingDelete
     if (!project) return
+    const pProf = projectProfileOf(project)
     try {
-      await projectsRequest('projects.delete', { id: project.id })
+      await projectsRequest('projects.delete', { id: project.id, profile: pProf })
       host.notify({ kind: 'success', message: t('deleted', project.name) })
       setPendingDelete(null)
       refresh()
     } catch (err) {
       try {
-        await projectsRequest('projects.archive', { id: project.id })
+        await projectsRequest('projects.archive', { id: project.id, profile: pProf })
         host.notify({ kind: 'success', message: t('archivedOk', project.name) })
         setPendingDelete(null)
         refresh()
@@ -1804,7 +2055,26 @@ function ProjectsPage() {
               jsx('div', { className: 'text-sm font-medium text-foreground', children: t('title') }),
               jsx('div', {
                 className: 'text-[0.6875rem] text-(--ui-text-quaternary)',
-                children: t('subtitle', String(profile || 'default'))
+                children: t('subtitle', String(profile || DEFAULT_PROFILE))
+              })
+            ]
+          }),
+          jsxs('div', {
+            className: 'flex w-[9.5rem] shrink-0 flex-col gap-0.5',
+            children: [
+              jsx('span', {
+                className: 'text-[0.6rem] font-medium uppercase tracking-wide text-(--ui-text-quaternary)',
+                children: t('profileFilterLabel')
+              }),
+              jsx(ProfileSelect, {
+                value: profile,
+                options: profileOptions,
+                onChange: next => {
+                  setSelectedProfile(normalizeProfileKey(next))
+                  try {
+                    haptic('tap')
+                  } catch (_) {}
+                }
               })
             ]
           }),
@@ -1906,13 +2176,17 @@ function ProjectsPage() {
         ? jsx(ProjectFormDialog, {
             open: true,
             mode: dialog.mode,
+            defaultProfile: profile,
             initial:
               (dialog.project &&
                 allProjects.find(p => p.id === dialog.project.id)) ||
               dialog.project ||
               null,
             onClose: () => setDialog(null),
-            onSaved: refresh
+            onSaved: () => {
+              // If edit moved the pin, jump the filter to the destination when known.
+              refresh()
+            }
           })
         : null,
 
@@ -1933,11 +2207,11 @@ function ProjectsPage() {
 function ProjectsStatusChip() {
   const t = usePluginI18n(ID)
   const qc = useQueryClient()
-  const profile = useValue(host.state.profile) || profileName()
+  const profile = normalizeProfileKey(useValue(host.state.profile) || profileName())
 
   const listQuery = useQuery({
     queryKey: [...QUERY_KEY, profile, 'statusbar'],
-    queryFn: async () => projectsRequest('projects.list', {}),
+    queryFn: async () => projectsRequest('projects.list', { profile }),
     refetchInterval: 15_000,
     retry: 1
   })
@@ -1956,7 +2230,7 @@ function ProjectsStatusChip() {
 
   const activate = async project => {
     try {
-      await projectsRequest('projects.set_active', { id: project.id })
+      await projectsRequest('projects.set_active', { id: project.id, profile })
       try {
         haptic('tap')
       } catch (_) {}
@@ -1973,7 +2247,7 @@ function ProjectsStatusChip() {
 
   const clearActive = async () => {
     try {
-      await projectsRequest('projects.set_active', { id: null })
+      await projectsRequest('projects.set_active', { id: null, profile })
       try {
         haptic('tap')
       } catch (_) {}
@@ -2118,7 +2392,7 @@ function ProjectsStatusChip() {
 export default {
   id: ID,
   name: 'Projects',
-  description: 'Create and manage named workspace projects (projects.db).',
+  description: 'Create and manage named workspace projects — pin each to a Hermes profile (default if unset).',
   defaultEnabled: true,
   register(ctx) {
     ctx.i18n.register({
@@ -2133,11 +2407,16 @@ export default {
         emptyTitle: 'No projects yet',
         emptyDesc: 'Create a named workspace with at least one folder on the house brain.',
         createTitle: 'New project',
-        createDesc: 'Name it, pick an icon, and point it at a folder the backend can see.',
+        createDesc: 'Name it, pick a profile + icon, and point it at a folder the backend can see.',
         renameTitle: 'Edit project',
         addFolderTitle: 'Add folder',
         nameLabel: 'Name',
         namePlaceholder: 'e.g. House Presence',
+        profileLabel: 'Profile',
+        profileFilterLabel: 'Profile',
+        profileHint: 'Pins this project to a Hermes profile (projects.db is per-profile). Leave as default if unsure.',
+        profileMoveHint: (from, to) => `Saving will move this project from “${from}” → “${to}”.`,
+        movedProfile: (name, to) => `Moved “${name}” to profile ${to}`,
         folderLabel: 'Folder (gateway home)',
         folderLabelLocal: 'Folder (this PC)',
         folderPlaceholder: '~/…  (gateway $HOME)',
